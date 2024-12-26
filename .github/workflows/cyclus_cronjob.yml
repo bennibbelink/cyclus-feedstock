@@ -11,6 +11,7 @@ jobs:
 
     outputs:
       has_changes: ${{ steps.check-upstream.outputs.has_changes }}
+      cyclus_commit: ${{ steps.check-upstream.outputs.cyclus_commit }}
     
     steps:
       - name: Checkout repository
@@ -46,15 +47,18 @@ jobs:
           if [ -z "$LAST_RUN" ]; then
             LAST_RUN=$(date -d "24 hours ago" -u +"%Y-%m-%dT%H:%M:%SZ")
           fi
-          echo $LAST_RUN
           
-          COMMITS=$(git log --since="$LAST_RUN" --format="%H" | wc -l)
-          
-          if [ "$COMMITS" -gt 0 ]; then
+          LAST_CYCLUS_COMMIT_HASH=$(gh api repos/cyclus/cyclus/commits/main --jq '.sha')
+          LAST_CYCLUS_COMMIT_DATE=$(gh api repos/cyclus/cyclus/commits/main --jq '.commit.author.date')
+          LAST_CYCLUS_COMMIT_TIMESTAMP=$(date -d "$LAST_CYCLUS_COMMIT_DATE" +%s)
+
+          if [[ $LAST_CYCLUS_COMMIT_TIMESTAMP -gt $LAST_RUN ]]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
           else
             echo "has_changes=false" >> $GITHUB_OUTPUT
           fi
+
+          echo "cyclus_commit=${LAST_CYCLUS_COMMIT_HASH}" >> $GITHUB_OUTPUT
 
   create-pr:
     needs: sync-repo
@@ -67,6 +71,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with: 
+          ref: dev
       
       - name: Install GitHub CLI
         run: |
@@ -105,7 +111,7 @@ jobs:
           GH_TOKEN: ${{ secrets.FEEDSTOCK_TOKEN }}
         shell: bash -el {0}
         run: |
-          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          SHORT_SHA=$(echo ${{ needs.sync-repo.outputs.cyclus_commit }} | cut -c1-7)
           NEW_BRANCH=cyclus-${SHORT_SHA}
           echo ${SHORT_SHA}
           echo ${NEW_BRANCH}
